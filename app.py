@@ -140,18 +140,19 @@ for prof, info in st.session_state.professores.items():
             st.rerun()
 
 # -------------------------
-# GERAR GRADE MULTI TURMAS
+# GERAR GRADE MULTI TURMAS COM PONTUAÇÃO PONDERADA
 # -------------------------
 if st.button("Gerar grade"):
     professores = st.session_state.professores
     melhor_grade = None
-    melhor_pontuacao = -1
+    melhor_pontuacao = -9999
     impossiveis = {}
 
     for tentativa in range(1000):
         grade = {}
         prof_ocupado = {}
         contador_aulas = {prof: 0 for prof in professores}
+        dois_tempos_nao_atendidos = {prof: 0 for prof in professores}
 
         for turma in turmas:
             for h in horarios:
@@ -160,14 +161,15 @@ if st.button("Gerar grade"):
                     if contador_aulas[prof] >= info["tempos_semana"]:
                         continue
                     if h in info["disponibilidade"] and (prof, h) not in prof_ocupado:
-                        # checar dois tempos consecutivos
                         if info["dois_tempos"]:
                             dia = h[:3]
                             tempo_num = int(h[3:])
                             if tempo_num == num_tempos:
+                                dois_tempos_nao_atendidos[prof] += 1
                                 continue
                             prox_h = f"{dia}{tempo_num+1:02}"
                             if prox_h not in info["disponibilidade"] or (prof, prox_h) in prof_ocupado:
+                                dois_tempos_nao_atendidos[prof] += 1
                                 continue
                         candidatos.append(prof)
 
@@ -189,15 +191,27 @@ if st.button("Gerar grade"):
                     prof_ocupado[(escolhido, prox_h)] = True
                     contador_aulas[escolhido] += 1
 
-        # verificar professores que não completaram os tempos/semana
-        for prof, info in professores.items():
-            if contador_aulas[prof] < info["tempos_semana"]:
-                impossiveis[prof] = info["tempos_semana"] - contador_aulas[prof]
+        # -------------------------
+        # CALCULAR PONTUAÇÃO PONDERADA
+        # -------------------------
+        total_preenchido = len(grade)
+        total_faltando = sum(max(0, professores[p]["tempos_semana"] - contador_aulas[p]) for p in professores)
+        total_dois_tempos_nao = sum(dois_tempos_nao_atendidos.values())
+        turmas_preenchidas = [sum(1 for h in horarios if (turma, h) in grade) for turma in turmas]
+        uniformidade = min(turmas_preenchidas) / max(1, max(turmas_preenchidas))
 
-        pontuacao = len(grade)
+        pontuacao = (
+            2 * total_preenchido           # Preenchimento de horários
+            - 5 * total_faltando            # Penalização aulas faltando
+            - 3 * total_dois_tempos_nao     # Penalização dois tempos consecutivos não atendidos
+            + 2 * uniformidade               # Bônus por uniformidade entre turmas
+        )
+
         if pontuacao > melhor_pontuacao:
             melhor_pontuacao = pontuacao
             melhor_grade = grade
+            melhor_contador_aulas = contador_aulas.copy()
+            melhor_dois_tempos_nao = dois_tempos_nao_atendidos.copy()
 
     if melhor_grade is None:
         st.warning("Não foi possível gerar uma grade completa com os professores disponíveis.")
@@ -253,6 +267,9 @@ if st.button("Gerar grade"):
     # -------------------------
     # AVISO DE PROFESSORES IMPOSSÍVEIS
     # -------------------------
+    impossiveis = {prof: max(0, professores[prof]["tempos_semana"] - melhor_contador_aulas.get(prof,0))
+                   for prof in professores if melhor_contador_aulas.get(prof,0) < professores[prof]["tempos_semana"]}
+
     if impossiveis:
         st.error("Os seguintes professores não puderam ser totalmente encaixados na grade. Ajuste a disponibilidade ou os tempos/semana:")
         for prof, faltando in impossiveis.items():
