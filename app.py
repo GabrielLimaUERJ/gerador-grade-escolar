@@ -79,6 +79,12 @@ def carregar_professores():
         st.warning("Arquivo vazio ou inexistente")
 
 # -------------------------
+# CARREGAMENTO AUTOMÁTICO AO INICIAR
+# -------------------------
+if not st.session_state.get("professores"):
+    carregar_professores()
+
+# -------------------------
 # ADICIONAR PROFESSOR
 # -------------------------
 st.header("Adicionar professor")
@@ -142,7 +148,7 @@ if st.button("Gerar grade"):
     melhor_grade = None
     melhor_pontuacao = -1
 
-    for tentativa in range(1000):  # Aumentei as tentativas para maior chance de sucesso
+    for tentativa in range(1000):
         grade = {}
         prof_ocupado = {}
         contador_aulas = {prof: 0 for prof in professores}
@@ -152,11 +158,10 @@ if st.button("Gerar grade"):
                 candidatos = []
                 for prof, info in professores.items():
                     if h in info["disponibilidade"] and (prof, h) not in prof_ocupado:
-                        # Se o professor leciona dois tempos, verifica se há tempo seguinte
                         if info["dois_tempos"]:
                             dia = h[:3]
                             tempo_num = int(h[3:])
-                            if tempo_num == num_tempos:  # Último tempo, não pode ocupar dois seguidos
+                            if tempo_num == num_tempos:
                                 continue
                             prox_h = f"{dia}{tempo_num+1:02}"
                             if prox_h not in info["disponibilidade"] or (prof, prox_h) in prof_ocupado:
@@ -173,7 +178,6 @@ if st.button("Gerar grade"):
                 prof_ocupado[(escolhido, h)] = True
                 contador_aulas[escolhido] += 1
 
-                # Se dois tempos seguidos, marca o próximo
                 if professores[escolhido]["dois_tempos"]:
                     dia = h[:3]
                     tempo_num = int(h[3:])
@@ -196,7 +200,12 @@ if st.button("Gerar grade"):
             melhor_pontuacao = pontuacao
             melhor_grade = grade
 
-    grade = melhor_grade
+    # Garante grade válida
+    if melhor_grade is None:
+        st.warning("Não foi possível gerar uma grade completa com os professores disponíveis.")
+        grade = {}
+    else:
+        grade = melhor_grade
 
     # Preenche horários vazios
     for turma in turmas:
