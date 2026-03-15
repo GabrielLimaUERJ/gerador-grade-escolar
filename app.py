@@ -3,10 +3,9 @@ import pandas as pd
 import random
 import json
 import os
-
-# Import do openpyxl para manipular Excel
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font
+from collections import Counter
 
 st.set_page_config(page_title="Gerador de Grade Escolar", layout="wide")
 
@@ -20,16 +19,15 @@ if not os.path.exists("professores.json"):
 st.title("📚 Gerador de Grade Escolar")
 
 # -------------------------
-# DIAS E TEMPOS
+# NÚMERO DE TEMPOS E TURMAS
 # -------------------------
+num_tempos = st.number_input("Número de tempos por dia", min_value=1, max_value=10, value=6)
+num_turmas = st.number_input("Número de turmas", min_value=1, max_value=10, value=3)
+
 dias = ["Seg", "Ter", "Qua", "Qui", "Sex"]
-tempos = ["01", "02", "03", "04", "05", "06"]
+tempos = [f"{i+1:02}" for i in range(num_tempos)]  # Gera dinamicamente os tempos
 horarios = [f"{d}{t}" for d in dias for t in tempos]
 
-# -------------------------
-# NÚMERO DE TURMAS
-# -------------------------
-num_turmas = st.number_input("Número de turmas", 1, 10, 3)
 turmas = [f"Turma {i}" for i in range(1, num_turmas + 1)]
 st.write("Turmas consideradas:", turmas)
 
@@ -44,7 +42,7 @@ for h in horarios:
         st.session_state[h] = False
 
 # -------------------------
-# FUNÇÕES
+# FUNÇÕES DE MARCAÇÃO
 # -------------------------
 def marcar_todos():
     for h in horarios:
@@ -85,6 +83,8 @@ def carregar_professores():
 # -------------------------
 st.header("Adicionar professor")
 nome = st.text_input("Nome do professor")
+dois_tempos_seguidos = st.checkbox("Leciona dois tempos seguidos?")
+tempos_semana = st.number_input("Quantos tempos este professor vai lecionar por semana?", min_value=1, max_value=num_tempos*len(dias))
 
 col1, col2 = st.columns(2)
 col1.button("Marcar todos os horários", on_click=marcar_todos)
@@ -105,7 +105,11 @@ for i, dia in enumerate(dias):
 if st.button("Adicionar professor"):
     disponibilidade = [h for h in horarios if st.session_state[h]]
     if nome:
-        st.session_state.professores[nome] = disponibilidade
+        st.session_state.professores[nome] = {
+            "disponibilidade": disponibilidade,
+            "dois_tempos": dois_tempos_seguidos,
+            "tempos_semana": tempos_semana
+        }
         st.success(f"{nome} adicionado")
         st.rerun()
 
@@ -120,11 +124,11 @@ col2.button("📂 Carregar professores", on_click=carregar_professores)
 # LISTA DE PROFESSORES
 # -------------------------
 st.subheader("Professores cadastrados")
-for prof, disp in st.session_state.professores.items():
+for prof, info in st.session_state.professores.items():
     col1, col2 = st.columns([4,1])
     with col1:
-        horarios_legiveis = [f"{h[:3]} Tempo {h[3:]}" for h in disp]
-        st.write(prof, "→", ", ".join(horarios_legiveis))
+        horarios_legiveis = [f"{h[:3]} Tempo {h[3:]}" for h in info["disponibilidade"]]
+        st.write(f"{prof} → {', '.join(horarios_legiveis)} | Dois tempos: {info['dois_tempos']} | Aulas/semana: {info['tempos_semana']}")
     with col2:
         if st.button("Remover", key=f"remover_{prof}"):
             del st.session_state.professores[prof]
@@ -144,7 +148,19 @@ if st.button("Gerar grade"):
         contador_aulas = {prof: 0 for prof in professores}
         for turma in turmas:
             for h in horarios:
-                candidatos = [prof for prof, disp in professores.items() if h in disp and (prof, h) not in prof_ocupado]
+                candidatos = []
+                for prof, info in professores.items():
+                    if h in info["disponibilidade"] and (prof, h) not in prof_ocupado:
+                        # Se o professor leciona dois tempos, verifica se o próximo tempo existe
+                        if info["dois_tempos"]:
+                            dia = h[:3]
+                            tempo_num = int(h[3:])
+                            if tempo_num == num_tempos:  # Último tempo do dia, não pode colocar dois seguidos
+                                continue
+                            prox_h = f"{dia}{tempo_num+1:02}"
+                            if prox_h not in info["disponibilidade"] or (prof, prox_h) in prof_ocupado:
+                                continue
+                        candidatos.append(prof)
                 if not candidatos:
                     continue
                 random.shuffle(candidatos)
@@ -153,6 +169,24 @@ if st.button("Gerar grade"):
                 grade[(turma, h)] = escolhido
                 prof_ocupado[(escolhido, h)] = True
                 contador_aulas[escolhido] += 1
+                # Se leciona dois tempos seguidos, marca o próximo também
+                if professores[escolhido]["dois_tempos"]:
+                    dia = h[:3]
+                    tempo_num = int(h[3:])
+                    prox_h = f"{dia}{tempo_num+1:02}"
+                    grade[(turma, prox_h)] = escolhido
+                    prof_ocupado[(escolhido, prox_h)] = True
+                    contador_aulas[escolhido] += 1
+
+        # Verifica se respeita quantidade de tempos por semana
+        ok = True
+        for prof, info in professores.items():
+            if contador_aulas[prof] > info["tempos_semana"]:
+                ok = False
+                break
+        if not ok:
+            continue
+
         pontuacao = len(grade)
         if pontuacao > melhor_pontuacao:
             melhor_pontuacao = pontuacao
