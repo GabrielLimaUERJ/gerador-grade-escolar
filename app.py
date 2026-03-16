@@ -35,6 +35,18 @@ st.write("Turmas consideradas:", turmas)
 # -------------------------
 if "professores" not in st.session_state:
     st.session_state.professores = {}
+    # Carrega professores do JSON só se não tiver nada na sessão
+    try:
+        with open("professores.json", "r") as f:
+            dados = json.load(f)
+            if isinstance(dados, dict):
+                st.session_state.professores = dados
+                # atualiza professores antigos sem 'turmas'
+                for chave, info in st.session_state.professores.items():
+                    if 'turmas' not in info:
+                        info['turmas'] = turmas.copy()
+    except:
+        st.session_state.professores = {}
 
 for h in horarios:
     if h not in st.session_state:
@@ -70,19 +82,15 @@ def carregar_professores():
             dados = json.load(f)
         if isinstance(dados, dict):
             st.session_state.professores = dados
+            for chave, info in st.session_state.professores.items():
+                if 'turmas' not in info:
+                    info['turmas'] = turmas.copy()
+            st.success("Professores carregados")
         else:
             st.session_state.professores = {}
-        # Atualiza professores antigos sem 'turmas'
-        for chave, info in st.session_state.professores.items():
-            if 'turmas' not in info:
-                info['turmas'] = turmas.copy()  # assume todas as turmas
-        st.success("Professores carregados")
     except:
         st.session_state.professores = {}
         st.warning("Arquivo vazio ou inexistente")
-
-if not st.session_state.get("professores"):
-    carregar_professores()
 
 # -------------------------
 # ADICIONAR PROFESSOR
@@ -93,7 +101,6 @@ disciplina = st.text_input("Disciplina")
 dois_tempos_seguidos = st.checkbox("Leciona dois tempos seguidos?")
 tempos_semana = st.number_input("Quantos tempos este professor vai lecionar por semana?", min_value=1, max_value=num_tempos*len(dias))
 
-# Seleção de turmas específicas
 st.subheader("Selecione as turmas para esta disciplina")
 turmas_selecionadas = []
 cols_turmas = st.columns(len(turmas))
@@ -129,6 +136,7 @@ if st.button("Adicionar professor"):
             "tempos_semana": tempos_semana,
             "turmas": turmas_selecionadas
         }
+        salvar_professores()
         st.success(f"{chave_prof} adicionado")
         st.rerun()
     else:
@@ -153,10 +161,11 @@ for chave_prof, info in st.session_state.professores.items():
     with col2:
         if st.button("Remover", key=f"remover_{chave_prof}"):
             del st.session_state.professores[chave_prof]
+            salvar_professores()
             st.rerun()
 
 # -------------------------
-# GERAR GRADE MULTI TURMAS COM BLOCO DE 2 TEMPOS
+# GERAR GRADE COM DISTRIBUIÇÃO EQUILIBRADA ENTRE TURMAS
 # -------------------------
 if st.button("Gerar grade"):
     professores = st.session_state.professores
@@ -170,27 +179,26 @@ if st.button("Gerar grade"):
         prof_ocupado = {}
         contador_aulas = {prof: 0 for prof in professores}
         dois_tempos_nao_atendidos = {prof: 0 for prof in professores}
-
-        turmas_random = turmas.copy()
-        random.shuffle(turmas_random)
+        contador_por_turma = {prof: {t:0 for t in turmas} for prof in professores}
 
         for dia in dias:
             for idx, tempo in enumerate(tempos):
-                for turma in turmas_random:
+                for turma in turmas:
                     h = f"{dia}{tempo}"
 
                     candidatos = []
                     for prof, info in professores.items():
+                        # disponibilidade total e turma
                         if contador_aulas[prof] >= info.get("tempos_semana",0):
                             continue
                         if h not in info.get("disponibilidade", []):
                             continue
                         if (prof, h) in prof_ocupado:
                             continue
-                        if turma not in info.get("turmas", turmas):
-                            continue  # só aloca nas turmas selecionadas
+                        if turma not in info.get("turmas", []):
+                            continue
 
-                        # Verifica dois tempos consecutivos
+                        # dois tempos consecutivos
                         if info.get("dois_tempos", False):
                             if idx + 1 >= len(tempos):
                                 dois_tempos_nao_atendidos[prof] += 1
@@ -205,19 +213,24 @@ if st.button("Gerar grade"):
                     if not candidatos:
                         continue
 
+                    # embaralha e ordena por quem tem menos aulas na turma
                     random.shuffle(candidatos)
-                    candidatos.sort(key=lambda p: contador_aulas[p])
+                    candidatos.sort(key=lambda p: (contador_por_turma[p][turma], contador_aulas[p]))
                     escolhido = candidatos[0]
 
+                    # alocar professor
                     grade[(turma, h)] = escolhido
                     prof_ocupado[(escolhido, h)] = True
                     contador_aulas[escolhido] += 1
+                    contador_por_turma[escolhido][turma] += 1
 
+                    # alocar segundo tempo consecutivo
                     if professores[escolhido].get("dois_tempos", False):
                         prox_h = f"{dia}{tempos[idx+1]}"
                         grade[(turma, prox_h)] = escolhido
                         prof_ocupado[(escolhido, prox_h)] = True
                         contador_aulas[escolhido] += 1
+                        contador_por_turma[escolhido][turma] += 1
 
         # -------------------------
         # CALCULAR PONTUAÇÃO
