@@ -72,6 +72,10 @@ def carregar_professores():
             st.session_state.professores = dados
         else:
             st.session_state.professores = {}
+        # Atualiza professores antigos sem 'turmas'
+        for chave, info in st.session_state.professores.items():
+            if 'turmas' not in info:
+                info['turmas'] = turmas.copy()  # assume todas as turmas
         st.success("Professores carregados")
     except:
         st.session_state.professores = {}
@@ -144,8 +148,8 @@ st.subheader("Professores cadastrados")
 for chave_prof, info in st.session_state.professores.items():
     col1, col2 = st.columns([4,1])
     with col1:
-        horarios_legiveis = [f"{h[:3]} Tempo {h[3:]}" for h in info["disponibilidade"]]
-        st.write(f"{chave_prof} → {', '.join(horarios_legiveis)} | Dois tempos: {info['dois_tempos']} | Aulas/semana: {info['tempos_semana']} | Turmas: {', '.join(info['turmas'])}")
+        horarios_legiveis = [f"{h[:3]} Tempo {h[3:]}" for h in info.get("disponibilidade",[])]
+        st.write(f"{chave_prof} → {', '.join(horarios_legiveis)} | Dois tempos: {info.get('dois_tempos', False)} | Aulas/semana: {info.get('tempos_semana',0)} | Turmas: {', '.join(info.get('turmas', []))}")
     with col2:
         if st.button("Remover", key=f"remover_{chave_prof}"):
             del st.session_state.professores[chave_prof]
@@ -177,22 +181,22 @@ if st.button("Gerar grade"):
 
                     candidatos = []
                     for prof, info in professores.items():
-                        if contador_aulas[prof] >= info["tempos_semana"]:
+                        if contador_aulas[prof] >= info.get("tempos_semana",0):
                             continue
-                        if h not in info["disponibilidade"]:
+                        if h not in info.get("disponibilidade", []):
                             continue
                         if (prof, h) in prof_ocupado:
                             continue
-                        if turma not in info["turmas"]:
+                        if turma not in info.get("turmas", turmas):
                             continue  # só aloca nas turmas selecionadas
 
                         # Verifica dois tempos consecutivos
-                        if info["dois_tempos"]:
+                        if info.get("dois_tempos", False):
                             if idx + 1 >= len(tempos):
                                 dois_tempos_nao_atendidos[prof] += 1
                                 continue
                             prox_h = f"{dia}{tempos[idx+1]}"
-                            if prox_h not in info["disponibilidade"] or (prof, prox_h) in prof_ocupado:
+                            if prox_h not in info.get("disponibilidade", []) or (prof, prox_h) in prof_ocupado:
                                 dois_tempos_nao_atendidos[prof] += 1
                                 continue
 
@@ -209,7 +213,7 @@ if st.button("Gerar grade"):
                     prof_ocupado[(escolhido, h)] = True
                     contador_aulas[escolhido] += 1
 
-                    if professores[escolhido]["dois_tempos"]:
+                    if professores[escolhido].get("dois_tempos", False):
                         prox_h = f"{dia}{tempos[idx+1]}"
                         grade[(turma, prox_h)] = escolhido
                         prof_ocupado[(escolhido, prox_h)] = True
@@ -219,7 +223,7 @@ if st.button("Gerar grade"):
         # CALCULAR PONTUAÇÃO
         # -------------------------
         total_preenchido = len(grade)
-        total_faltando = sum(max(0, professores[p]["tempos_semana"] - contador_aulas[p]) for p in professores)
+        total_faltando = sum(max(0, professores[p].get("tempos_semana",0) - contador_aulas[p]) for p in professores)
         total_dois_tempos_nao = sum(dois_tempos_nao_atendidos.values())
         turmas_preenchidas = [sum(1 for h in horarios if (turma, h) in grade) for turma in turmas]
         uniformidade = min(turmas_preenchidas) / max(1, max(turmas_preenchidas))
@@ -291,8 +295,8 @@ if st.button("Gerar grade"):
     # -------------------------
     # AVISO DE PROFESSORES IMPOSSÍVEIS
     # -------------------------
-    impossiveis = {prof: max(0, professores[prof]["tempos_semana"] - melhor_contador_aulas.get(prof,0))
-                   for prof in professores if melhor_contador_aulas.get(prof,0) < professores[prof]["tempos_semana"]}
+    impossiveis = {prof: max(0, professores[prof].get("tempos_semana",0) - melhor_contador_aulas.get(prof,0))
+                   for prof in professores if melhor_contador_aulas.get(prof,0) < professores[prof].get("tempos_semana",0)}
 
     if impossiveis:
         st.error("Os seguintes professores não puderam ser totalmente encaixados na grade. Ajuste a disponibilidade ou os tempos/semana:")
