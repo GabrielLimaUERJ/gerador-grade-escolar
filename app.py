@@ -156,6 +156,14 @@ for chave_prof, info in st.session_state.professores.items():
             st.rerun()
 
 # -------------------------
+# SALVAR / CARREGAR PROFESSORES
+# -------------------------
+st.subheader("💾 Gerenciar professores")
+col1, col2 = st.columns(2)
+col1.button("💾 Salvar professores", on_click=salvar_professores)
+col2.button("📂 Carregar professores", on_click=carregar_professores)
+
+# -------------------------
 # GERAR GRADE
 # -------------------------
 if st.button("Gerar grade"):
