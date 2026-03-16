@@ -174,19 +174,18 @@ if st.button("Gerar grade"):
 
         for dia in dias:
             for idx, tempo in enumerate(tempos):
-                # Embaralha turmas para balancear automaticamente
                 turmas_random = turmas.copy()
                 random.shuffle(turmas_random)
                 for turma in turmas_random:
                     h = f"{dia}{tempo}"
-
                     candidatos = []
+
                     for prof, info in professores.items():
                         if contador_aulas[prof] >= info.get("tempos_semana",0):
                             continue
                         if h not in info.get("disponibilidade", []):
                             continue
-                        if (prof, h) in prof_ocupado:
+                        if (prof,h) in prof_ocupado:
                             continue
                         if turma not in info.get("turmas", []):
                             continue
@@ -206,7 +205,6 @@ if st.button("Gerar grade"):
                     if not candidatos:
                         continue
 
-                    # Ordena por menos aulas na turma e total
                     random.shuffle(candidatos)
                     candidatos.sort(key=lambda p: (contador_por_turma[p][turma], contador_aulas[p]))
                     escolhido = candidatos[0]
@@ -217,7 +215,7 @@ if st.button("Gerar grade"):
                     contador_aulas[escolhido] += 1
                     contador_por_turma[escolhido][turma] += 1
 
-                    # Aloca segundo tempo se necessário
+                    # Segundo tempo consecutivo
                     if professores[escolhido].get("dois_tempos", False):
                         prox_h = f"{dia}{tempos[idx+1]}"
                         grade[(turma, prox_h)] = escolhido
@@ -234,7 +232,24 @@ if st.button("Gerar grade"):
         turmas_preenchidas = [sum(1 for h in horarios if (turma,h) in grade) for turma in turmas]
         uniformidade = min(turmas_preenchidas) / max(1, max(turmas_preenchidas))
 
-        pontuacao = 2*total_preenchido - 5*total_faltando - 3*total_dois_tempos_nao + 2*uniformidade
+        # Penalidade: 3 ou mais aulas consecutivas na mesma turma
+        penalidade_consecutivos = 0
+        for turma in turmas:
+            for dia in dias:
+                cont = 0
+                ultimo_prof = None
+                for tempo in tempos:
+                    h = f"{dia}{tempo}"
+                    prof = grade.get((turma,h), None)
+                    if prof == ultimo_prof and prof is not None:
+                        cont += 1
+                    else:
+                        cont = 1
+                    ultimo_prof = prof
+                    if cont >= 3:
+                        penalidade_consecutivos += 2
+
+        pontuacao = 2*total_preenchido - 5*total_faltando - 3*total_dois_tempos_nao + 2*uniformidade - penalidade_consecutivos
 
         if pontuacao > melhor_pontuacao:
             melhor_pontuacao = pontuacao
