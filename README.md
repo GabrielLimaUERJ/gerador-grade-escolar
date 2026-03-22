@@ -31,7 +31,7 @@ Organizar a grade escolar de forma automática, eficiente e flexível, permitind
 - Geração automática da grade escolar  
 - Respeito a restrições de sequência de aulas  
 - Visualização da grade por professor e turma  
-- Exportação para CSV ou Excel  
+- Exportação para Excel  
 - Ajustes manuais via interface interativa  
 
 ---
